@@ -18,7 +18,7 @@ const char* password = "ku7j7br5phzx";
 //Datos de conexion a la API REST
 const char* host = "156.35.98.12";
 const String routeBase = "/api";
-const String routeGetHorarios = "/horarios";
+const String routeGetHorarios = "/schedule";
 const String routeUpdateHorario = "/update";
 const String routeNotificacion = "/notify";
 
@@ -28,13 +28,14 @@ const int llamadasCada = 60;
 //Segundos de margen para permitir la toma de la medicacion
 const int margenToma = 300;       //5 min
 
-const size_t bufferSize = + 120;
-
 //COMANDOS DE EJECUCION EN ATmega2560
 //Comando completo "[MPAS-1-3]" donde 1 es el numero de pastillero y 3 la cantidad
 //de pastillas a tomar (numero de pasos del respectivo pastillero)
 const String moverPastillero1 = "[MPAS-1";
 const String moverPastillero2 = "[MPAS-2";
+const String wifiOk = "[WIFIOK-1]";     //Comando de confirmacion de conexion WiFi
+//Comando de confirmacion de toma de medicacion (Sensor IR y btn de confirmacion ok)
+const String medicacionTomada = "[MEDTOMADA-1]";
 
 //COMANDO RECIBIDOS DE ATmega2560
 const String botonPulsado = "PULSABTN";
@@ -46,17 +47,11 @@ const String irDeteccion = "IRDETECCION";
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
 
-//Memoria dinamica para el Buffer del parser JSON
-DynamicJsonBuffer jsonBuffer(bufferSize);
-
 long controMinutoApi;
 String comandoEvento;
 
 //Variables de API REST
 RestClient client = RestClient(host, 8081); //Crear instancia para realizar API REST
-String route;
-String response;
-int statusCode;
 
 //Horarios programados para ahora
 //Objetivo: Controlar los minutos siguientes a la programacion para comprobar
@@ -142,17 +137,11 @@ void serial1Event() {
           Serial.println("Confirmacion btn toma");
           btnConfirmacion = true;
 
-          Serial.println("Numero horarios: " + numHorarios);
-
           //Actualizar boton de confirmacion de los horarios
           for (int i = 0; i < numHorarios; i = i + 1) {
-            route = routeBase + routeUpdateHorario;
+            String route = routeBase + routeUpdateHorario;
             String body = "id=" + horarios[i][0] + "&accion=" + "tomadaBtn";
-            client.setHeader("Content-Type: application/x-www-form-urlencoded");
-            statusCode = client.post(route.c_str(), body.c_str(), &response);
-
-            //Resetear statusCode
-            statusCode = 0;
+            sendPostToAPI(route, body);
           }
         }
         //Boton de EMERGENCIA de toma pulsado (2)
@@ -162,17 +151,20 @@ void serial1Event() {
       }
       //EVENTO DE DETECCION DE SENSOR IR
       //Siempre y cuando sea necesaria toma de medicacion
-      else if (code.equals(irDeteccion) && necesariaToma) {
-        //IR de DETECCION de toma (1)
-        if (value.toInt() == 1) {
-          Serial.println("Deteccion ir toma");
-          irToma = true;
+      else if (code.equals(irDeteccion) && necesariaToma && !irToma) {
+        //IR de DETECCION de toma
+        Serial.println("Deteccion IR toma");
+        irToma = true;
 
-
+        //Actualizar IR de confirmacion de los horarios
+        for (int i = 0; i < numHorarios; i = i + 1) {
+          String route = routeBase + routeUpdateHorario;
+          String body = "id=" + horarios[i][0] + "&accion=" + "tomadaIR";
+          sendPostToAPI(route, body);
         }
       }
       else {
-        Serial.println("COMANDO ERRONEO!!");
+        Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO");
       }
 
       comandoEvento = "";
@@ -188,13 +180,15 @@ void rutinaApiHorarios() {
     controMinutoApi = timeClient.getEpochTime() + llamadasCada;
     /*Serial.println(controMinutoApi);*/
 
-    route = routeBase + routeGetHorarios  + "/" + serial;
+    String response;
+    String route = routeBase + routeGetHorarios  + "/" + serial;
     /*Serial.println("Requesting http://" + host + route);*/
-    statusCode = client.get(route.c_str(), &response);
-    /*Serial.println(statusCode + " " + response);*/
+    int statusCode = client.get(route.c_str(), &response);
+    /* Serial.println(statusCode + " " + response); */
 
     //Si el codigo de la respuesta es 200, toma de medicacion
     if (statusCode == 200) {
+      StaticJsonBuffer<1000> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(response);
 
       //Comprobar si se ha parseado el JSON correctamente
@@ -208,6 +202,7 @@ void rutinaApiHorarios() {
 
       for (int i = 0; i < numHorarios; i = i + 1) {
         String id = data[i]["id"];
+        /* Serial.println(id); */
         int unixTimeTomaInt = data[i]["unixtimetoma"];
         String unixTimeToma = String(unixTimeTomaInt);
         String pastillero = data[i]["pastillero"];
@@ -243,6 +238,8 @@ void comprobacionToma() {
     //no es necesaria notificacion ya que se presupone que se ha tomado la medicacion
     if (btnConfirmacion && irToma) {
       resetearNecesariaToma();
+      Serial.println(medicacionTomada);                   //CODIGO DE EJECUCION EN ATMEGA
+      Serial.println("MEDICACION TOMADA CORRECTAMENTE!");
     }
     else {
       for (int i = 0; i < numHorarios; i = i + 1) {
@@ -258,6 +255,8 @@ void comprobacionToma() {
 
 /* Resetear variables de necesaria toma */
 void resetearNecesariaToma() {
+  numHorarios = 0;
+  
   necesariaToma = false;
   btnConfirmacion = false;
   irToma = false;
@@ -273,10 +272,20 @@ void conexionWiFi() {
     /*Serial.print(".");*/
   }
 
+  //Notificar a ATMega que se ha conectado correctamente al WiFi
+  Serial.println(wifiOk);    //CODIGO DE EJECUCION EN ATMEGA
+
   /*Serial.println("");
     Serial.println("Conectado a " + ssid);*/
 }
 
+/* Enviar peticion POST a la API REST a la routa y con los paramentos que
+  marcan los parametros "route" y "body" respectivamente */
+void sendPostToAPI(String route, String body) {
+  String response;
+  client.setHeader("Content-Type: application/x-www-form-urlencoded");
+  int statusCode = client.post(route.c_str(), body.c_str(), &response);
+}
 
 /* Metodo de utilidad para hacer split de un String */
 String split(String data, char separator, int index)

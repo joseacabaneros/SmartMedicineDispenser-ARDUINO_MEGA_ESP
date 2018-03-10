@@ -4,8 +4,11 @@
 /********************************************************************************/
 
 /**********************************  DEFINES  ***********************************/
-#define PIN_LED 49
+#define PIN_LED_NOT_TOMA 49
+#define PIN_LED_WIFI_OK 47
 #define PIN_BTN_CONF 51
+#define PIN_IR_TOMA 53
+#define PIN_ZUMB_NOT_TOMA 52
 #define HALFSTEP 8 //Half-step mode (8 step control signal sequence)
 
 //Define para los pines del MOTOR PASO A PASO 1
@@ -22,9 +25,12 @@ const int pasos = 315;
 //COMANDOS DE EJECUCION EN ESP8266
 const String botonConfirmacionPulsado = "[PULSABTN-1]";
 const String botonEmergenciaPulsado = "[PULSABTN-2]";
+const String sensorIrDetectado = "[IRDETECCION-1]";
 
-//COMANDO RECIBIDOS DE ATmega2560
+//COMANDO RECIBIDOS DE ESP8266
 const String moverPastillero = "MPAS";
+const String wifiok = "WIFIOK";
+const String medicacionTomada = "MEDTOMADA";
 /********************************************************************************/
 
 /*********************************  VARIABLES  **********************************/
@@ -34,7 +40,8 @@ AccelStepper stepper1(HALFSTEP, motorPin1, motorPin3, motorPin2, motorPin4);
 //Variables de control
 bool movPas1;
 bool movPas2;
-bool onlyOne;
+int oldStateBtnConf;
+int oldStateIrConf;
 
 String stringRecibido;
 /********************************************************************************/
@@ -48,21 +55,27 @@ void setup() {
   while (!Serial3) { }
 
   //Pin modes
-  pinMode(PIN_LED, OUTPUT);
+  pinMode(PIN_LED_NOT_TOMA, OUTPUT);
+  pinMode(PIN_ZUMB_NOT_TOMA, OUTPUT);
+  pinMode(PIN_LED_WIFI_OK, OUTPUT);
   pinMode(PIN_BTN_CONF, INPUT);
+  pinMode(PIN_IR_TOMA, INPUT);
 
   //Inicializar pines
-  digitalWrite(PIN_LED, LOW);
+  digitalWrite(PIN_LED_NOT_TOMA, LOW);
+  digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
+  digitalWrite(PIN_LED_WIFI_OK, LOW);
 
   //Inicializar motor paso a paso 1
-  stepper1.setMaxSpeed(1000.0);
+  stepper1.setMaxSpeed(500.0);
   stepper1.setAcceleration(100.0);
-  stepper1.setSpeed(100);
+  stepper1.setSpeed(200);
 
   //Inicializacion de variables de control
   movPas1 = false;
   movPas2 = false;
-  onlyOne = true;
+  oldStateBtnConf = LOW;
+  oldStateIrConf = HIGH;
 }
 
 /********************************************************************************/
@@ -104,6 +117,9 @@ void serial3Event() {
 
       //EVENTO DE MOVER PASTILLERO
       if (code.equals(moverPastillero)) {
+        digitalWrite(PIN_LED_NOT_TOMA, HIGH);
+        digitalWrite(PIN_ZUMB_NOT_TOMA, HIGH);
+        
         String numPastillas = split(stringRecibido, '-', 2);
         Serial.println("Pastillas: " + numPastillas);
         
@@ -112,7 +128,7 @@ void serial3Event() {
         if (value.toInt() == 1) {
           movPas1 = true;
           stepper1.move(pasos * numPastillas.toInt());
-          digitalWrite(PIN_LED, HIGH);
+          
         }
         //Mover PASTILLERO 2
         //Comando completo "[MPAS-2-3]"
@@ -120,8 +136,17 @@ void serial3Event() {
           movPas2 = true;
         }
       }
+      //EVENTO WIFIOK
+      else if (code.equals(wifiok)) {
+        digitalWrite(PIN_LED_WIFI_OK, HIGH);
+      }
+      //EVENTO MEDTOMADA (Sensor IR y btn confirmacion ok)
+      else if (code.equals(medicacionTomada)) {
+        digitalWrite(PIN_LED_NOT_TOMA, LOW);
+        digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
+      }
       else {
-        Serial.println("Wrong command");
+        Serial.println("COMANDO ERRONEO!");
       }
 
       stringRecibido = "";
@@ -149,14 +174,26 @@ void controlMotores(){
 }
 
 
-/* Eventos surgidos en el hardware accionable de la caja de medicamentos */
+/* Eventos surgidos en el hardware accionable/detectable de la caja de medicamentos */
 void eventosHardware(){
-  if (digitalRead(PIN_BTN_CONF) == 1 && onlyOne) {
+  //BOTON DE CONFIRMACION DE TOMA DE MEDICATION
+  int newStateBtnConf = digitalRead(PIN_BTN_CONF);
+  if (newStateBtnConf == HIGH && oldStateBtnConf == LOW) {
     Serial3.print(botonConfirmacionPulsado);
-    onlyOne = false;
+    oldStateBtnConf = HIGH;
   }
-  else if (digitalRead(PIN_BTN_CONF) == 0 && !onlyOne) {
-    onlyOne = true;
+  else if (newStateBtnConf == LOW && oldStateBtnConf == HIGH) {
+    oldStateBtnConf = LOW;
+  }
+  
+  //SENSOR IR QUE DETECTA SI LA MEDICACION HA SIDO TOMADA
+  int newStateIrConf = digitalRead(PIN_IR_TOMA);
+  if (newStateIrConf == LOW && oldStateIrConf == HIGH) {  //Deteccion
+    Serial3.print(sensorIrDetectado);
+    oldStateIrConf = LOW;
+  }
+  else if (newStateIrConf == HIGH && oldStateIrConf == LOW) {
+    oldStateIrConf = HIGH;
   }
 }
 
