@@ -4,18 +4,24 @@
 /********************************************************************************/
 
 /**********************************  DEFINES  ***********************************/
-#define PIN_LED_NOT_TOMA 49
-#define PIN_LED_WIFI_OK 47
-#define PIN_BTN_CONF 51
-#define PIN_IR_TOMA 53
-#define PIN_ZUMB_NOT_TOMA 52
-#define HALFSTEP 8 //Half-step mode (8 step control signal sequence)
+#define PIN_LED_NOT_TOMA   49
+#define PIN_ZUMB_NOT_TOMA  52
+#define PIN_LED_WIFI_OK    47
+#define PIN_BTN_CONF       51
+#define PIN_IR_TOMA        53
+#define HALFSTEP           8 //Half-step mode (8 step control signal sequence)
 
 //Define para los pines del MOTOR PASO A PASO 1
-#define motorPin1  2     // IN1 on the ULN2003 driver 1
-#define motorPin2  3     // IN2 on the ULN2003 driver 1
-#define motorPin3  4     // IN3 on the ULN2003 driver 1
-#define motorPin4  5     // IN4 on the ULN2003 driver 1
+#define motor1Pin1         2     // IN1 on the ULN2003 driver 1
+#define motor1Pin2         3     // IN2 on the ULN2003 driver 1
+#define motor1Pin3         4     // IN3 on the ULN2003 driver 1
+#define motor1Pin4         5     // IN4 on the ULN2003 driver 1
+
+//Define para los pines del MOTOR PASO A PASO 2
+#define motor2Pin1         8     // IN1 on the ULN2003 driver 2
+#define motor2Pin2         9     // IN2 on the ULN2003 driver 2
+#define motor2Pin3         10     // IN3 on the ULN2003 driver 2
+#define motor2Pin4         11     // IN4 on the ULN2003 driver 2
 /********************************************************************************/
 
 /*********************************  CONSTANTES  *********************************/
@@ -23,6 +29,9 @@
 const int pasos = 315;
 
 //COMANDOS DE EJECUCION EN ESP8266
+//Motor a llegado a su posicion y ha dispensado las pastillas correspondientes
+const String motorPastillasDispensadas1 = "[MOTORDISPENSADO-1]";
+const String motorPastillasDispensadas2 = "[MOTORDISPENSADO-2]";
 const String botonConfirmacionPulsado = "[PULSABTN-1]";
 const String botonEmergenciaPulsado = "[PULSABTN-2]";
 const String sensorIrDetectado = "[IRDETECCION-1]";
@@ -35,7 +44,8 @@ const String medicacionTomada = "MEDTOMADA";
 
 /*********************************  VARIABLES  **********************************/
 // Initialize with pin sequence IN1-IN3-IN2-IN4 for using the AccelStepper with 28BYJ-48
-AccelStepper stepper1(HALFSTEP, motorPin1, motorPin3, motorPin2, motorPin4);
+AccelStepper stepper1(HALFSTEP, motor1Pin1, motor1Pin3, motor1Pin2, motor1Pin4);
+AccelStepper stepper2(HALFSTEP, motor2Pin1, motor2Pin3, motor2Pin2, motor2Pin4);
 
 //Variables de control
 bool movPas1;
@@ -70,6 +80,10 @@ void setup() {
   stepper1.setMaxSpeed(500.0);
   stepper1.setAcceleration(100.0);
   stepper1.setSpeed(200);
+  //Inicializar motor paso a paso 2
+  stepper2.setMaxSpeed(500.0);
+  stepper2.setAcceleration(100.0);
+  stepper2.setSpeed(200);
 
   //Inicializacion de variables de control
   movPas1 = false;
@@ -115,7 +129,7 @@ void serial3Event() {
       Serial.println("Code: " + code);
       Serial.println("Value: " + value);
 
-      //EVENTO DE MOVER PASTILLERO
+      //Evento de MOVER PASTILLERO
       if (code.equals(moverPastillero)) {
         digitalWrite(PIN_LED_NOT_TOMA, HIGH);
         digitalWrite(PIN_ZUMB_NOT_TOMA, HIGH);
@@ -128,19 +142,19 @@ void serial3Event() {
         if (value.toInt() == 1) {
           movPas1 = true;
           stepper1.move(pasos * numPastillas.toInt());
-          
         }
         //Mover PASTILLERO 2
         //Comando completo "[MPAS-2-3]"
         else if (value.toInt() == 2) {
           movPas2 = true;
+          stepper2.move(pasos * numPastillas.toInt());
         }
       }
-      //EVENTO WIFIOK
+      //Evento de WIFIOK
       else if (code.equals(wifiok)) {
         digitalWrite(PIN_LED_WIFI_OK, HIGH);
       }
-      //EVENTO MEDTOMADA (Sensor IR y btn confirmacion ok)
+      //Evento de MEDTOMADA (Sensor IR y btn confirmacion ok)
       else if (code.equals(medicacionTomada)) {
         digitalWrite(PIN_LED_NOT_TOMA, LOW);
         digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
@@ -167,8 +181,18 @@ void controlMotores(){
     if (stepper1.distanceToGo() == 0) {
       stepper1.stop();
       movPas1 = false;
+      Serial3.print(motorPastillasDispensadas1);
     } else {
       stepper1.run();
+    }
+  }
+  if (movPas2) {
+    if (stepper2.distanceToGo() == 0) {
+      stepper2.stop();
+      movPas2 = false;
+      Serial3.print(motorPastillasDispensadas2);
+    } else {
+      stepper2.run();
     }
   }
 }

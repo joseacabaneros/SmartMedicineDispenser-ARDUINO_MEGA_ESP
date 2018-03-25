@@ -10,6 +10,7 @@
 /*********************************  CONSTANTES  *********************************/
 //Serial Caja de Medicamentos
 const String serial = "yyyyy-yyyyy-yyyyy-yyyyy-yyyyy";
+const int numPastilleros = 2;
 
 //Datos de conexion al WiFi
 const char* ssid = "JAZZTEL_U9rS";
@@ -19,7 +20,8 @@ const char* password = "ku7j7br5phzx";
 const char* host = "156.35.98.12";
 const String routeBase = "/api";
 const String routeGetHorarios = "/schedule";
-const String routeUpdateHorario = "/update";
+const String routeUpdateHorario = "/update/action";
+const String routeUpdatePosicion = "/update/position";
 const String routeNotificacion = "/notify";
 
 //Segundos para la siguiente llamada a la API de consulta de horarios
@@ -38,6 +40,7 @@ const String wifiOk = "[WIFIOK-1]";     //Comando de confirmacion de conexion Wi
 const String medicacionTomada = "[MEDTOMADA-1]";
 
 //COMANDO RECIBIDOS DE ATmega2560
+const String motorPastillasDispensadas = "MOTORDISPENSADO";
 const String botonPulsado = "PULSABTN";
 const String irDeteccion = "IRDETECCION";
 /********************************************************************************/
@@ -58,9 +61,9 @@ RestClient client = RestClient(host, 8081); //Crear instancia para realizar API 
 //  que se toma la medicacion y actuar en consecuencia
 //  - Tomada: Sensor IR y boton de confirmacion
 //  - No tomada: Notificacion de no toma
-//i = 0 => id(id de mongo), unixtimetoma, pastillero=1, pastillas(numero)
-//i = 1 => id(id de mongo), unixtimetoma, pastillero=2, pastillas(numero)
-String horarios[2][4];
+//i = 0 => id(id de mongo), unixtimetoma, pastillero=1, pastillas
+//i = 1 => id(id de mongo), unixtimetoma, pastillero=2, pastillas
+String horarios[numPastilleros][4];
 int numHorarios;
 
 boolean necesariaToma;
@@ -129,9 +132,39 @@ void serial1Event() {
       Serial.println("Code: " + code);
       Serial.println("Value: " + value);
 
-      //EVENTO DE PULSACION DE BOTON
+      //Evento de MOTOR PASTILLAS YA DISPENSADAS
+      if (code.equals(motorPastillasDispensadas)) {
+        //MOTOR PASTILLERO(1-A)
+        if (value.toInt() == 1) {
+          Serial.println("Confirmacion motor 1-A pastillas dispensadas");
+
+          //Actualizar posicion del pastillero 1-A
+          String route = routeBase + routeUpdatePosicion;
+          String body = "serial=" + serial + "&pastillero=A&pastillas=" + horarios[0][3];
+          
+          sendPostToAPI(route, body);
+        }
+        //MOTOR PASTILLERO(2-B)
+        else if (value.toInt() == 2) {
+          Serial.println("Confirmacion motor 2-B pastillas dispensadas");
+
+          //Actualizar posicion del pastillero 2-B
+          String route = routeBase + routeUpdatePosicion;
+          String body = "serial=" + serial + "&pastillero=B&pastillas=";
+
+          //Si hay programacion para ambos pastilleros A y B
+          if(numHorarios == 2){
+            body = body + horarios[1][3];
+          }else{//Si hay programacion solo para el pastillero B
+            body = body + horarios[0][3];
+          }
+            
+          sendPostToAPI(route, body);
+        }
+      }
+      //Evento de PULSACION DE BOTON
       //Siempre y cuando sea necesaria toma de medicacion
-      if (code.equals(botonPulsado) && necesariaToma && !btnConfirmacion) {
+      else if (code.equals(botonPulsado) && necesariaToma && !btnConfirmacion) {
         //Boton de CONFIRMACION de toma pulsado (1)
         if (value.toInt() == 1) {
           Serial.println("Confirmacion btn toma");
@@ -149,7 +182,7 @@ void serial1Event() {
 
         }
       }
-      //EVENTO DE DETECCION DE SENSOR IR
+      //Evento de DETECCION DE SENSOR IR
       //Siempre y cuando sea necesaria toma de medicacion
       else if (code.equals(irDeteccion) && necesariaToma && !irToma) {
         //IR de DETECCION de toma
