@@ -15,6 +15,10 @@ const int numPastilleros = 2;
 //Datos de conexion al WiFi
 const char* ssid = "JAZZTEL_U9rS";
 const char* password = "ku7j7br5phzx";
+/*
+const char* ssid = "AndroidAP";
+const char* password = "abcd1234";
+*/
 
 //Datos de conexion a la API REST
 const char* host = "156.35.98.12";
@@ -31,10 +35,10 @@ const int llamadasCada = 60;
 const int margenToma = 300;       //5 min
 
 //COMANDOS DE EJECUCION EN ATmega2560
-//Comando completo "[MPAS-1-3]" donde 1 es el numero de pastillero y 3 la cantidad
+//Comando completo "[MPAS-A-3]" donde A es el pastillero y 3 la cantidad
 //de pastillas a tomar (numero de pasos del respectivo pastillero)
-const String moverPastillero1 = "[MPAS-1";
-const String moverPastillero2 = "[MPAS-2";
+const String moverPastilleroA = "[MPAS-A";
+const String moverPastilleroB = "[MPAS-B";
 const String wifiOk = "[WIFIOK-1]";     //Comando de confirmacion de conexion WiFi
 //Comando de confirmacion de toma de medicacion (Sensor IR y btn de confirmacion ok)
 const String medicacionTomada = "[MEDTOMADA-1]";
@@ -61,8 +65,8 @@ RestClient client = RestClient(host, 8081); //Crear instancia para realizar API 
 //  que se toma la medicacion y actuar en consecuencia
 //  - Tomada: Sensor IR y boton de confirmacion
 //  - No tomada: Notificacion de no toma
-//i = 0 => id(id de mongo), unixtimetoma, pastillero=1, pastillas
-//i = 1 => id(id de mongo), unixtimetoma, pastillero=2, pastillas
+//i = 0 => id(id de mongo), unixtimetoma, pastillero=A, pastillas
+//i = 1 => id(id de mongo), unixtimetoma, pastillero=B, pastillas
 String horarios[numPastilleros][4];
 int numHorarios;
 
@@ -134,21 +138,21 @@ void serial1Event() {
 
       //Evento de MOTOR PASTILLAS YA DISPENSADAS
       if (code.equals(motorPastillasDispensadas)) {
-        //MOTOR PASTILLERO(1-A)
-        if (value.toInt() == 1) {
-          Serial.println("Confirmacion motor 1-A pastillas dispensadas");
+        //MOTOR PASTILLERO A
+        if (value == "A") {
+          Serial.println("Confirmacion motor A pastillas dispensadas");
 
-          //Actualizar posicion del pastillero 1-A
+          //Actualizar posicion del pastillero A
           String route = routeBase + routeUpdatePosicion;
           String body = "serial=" + serial + "&pastillero=A&pastillas=" + horarios[0][3];
           
           sendPostToAPI(route, body);
         }
-        //MOTOR PASTILLERO(2-B)
-        else if (value.toInt() == 2) {
-          Serial.println("Confirmacion motor 2-B pastillas dispensadas");
+        //MOTOR PASTILLERO B
+        else if (value == "B") {
+          Serial.println("Confirmacion motor B pastillas dispensadas");
 
-          //Actualizar posicion del pastillero 2-B
+          //Actualizar posicion del pastillero B
           String route = routeBase + routeUpdatePosicion;
           String body = "serial=" + serial + "&pastillero=B&pastillas=";
 
@@ -251,13 +255,13 @@ void rutinaApiHorarios() {
         horarios[i][2] = pastillero;
         horarios[i][3] = pastillas;
 
-        if (pastillero.toInt() == 1) {
-          //Comando completo "[MPAS-1-3]"
-          Serial.println(moverPastillero1 + "-" + pastillas + "]");    //CODIGO DE EJECUCION EN ATMEGA
+        if (pastillero == "A") {
+          //Comando completo "[MPAS-A-3]"
+          Serial.println(moverPastilleroA + "-" + pastillas + "]");    //CODIGO DE EJECUCION EN ATMEGA
         }
-        else if (pastillero.toInt() == 2) {
-          //Comando completo "[MPAS-2-3]"
-          Serial.println(moverPastillero2 + "-" + pastillas + "]");    //CODIGO DE EJECUCION EN ATMEGA
+        else if (pastillero == "B") {
+          //Comando completo "[MPAS-B-3]"
+          Serial.println(moverPastilleroB + "-" + pastillas + "]");    //CODIGO DE EJECUCION EN ATMEGA
         }
       }
     }
