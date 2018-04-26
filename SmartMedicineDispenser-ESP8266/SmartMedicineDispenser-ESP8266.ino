@@ -42,11 +42,16 @@ const String moverPastilleroB = "[MPAS-B";
 const String wifiOk = "[WIFIOK-1]";     //Comando de confirmacion de conexion WiFi
 //Comando de confirmacion de toma de medicacion (Sensor IR y btn de confirmacion ok)
 const String medicacionTomada = "[MEDTOMADA-1]";
+//Comando para solicitar la temperatura y la humedad del dispensador
+const String solicitarTempHum = "[SOLICTEMHUM-1]";
 
 //COMANDO RECIBIDOS DE ATmega2560
 const String motorPastillasDispensadas = "MOTORDISPENSADO";
 const String botonPulsado = "PULSABTN";
 const String irDeteccion = "IRDETECCION";
+const String tempHumeCalor = "TEMPHUMCALOR";
+const String gasDeteccion = "GASDETECCION";
+const String vibDeteccion = "VIBDETECCION";
 /********************************************************************************/
 
 /*********************************  VARIABLES  **********************************/
@@ -73,6 +78,15 @@ int numHorarios;
 boolean necesariaToma;
 boolean btnConfirmacion;
 boolean irToma;
+
+//Temporales de temperatura, humedad e indice de calor
+float tempTempe;
+float tempHumed;
+float tempCalor;
+
+//Temporales de gas y vibracion
+bool tempGas;
+bool tempVib;
 /********************************************************************************/
 
 void setup() {
@@ -95,6 +109,13 @@ void setup() {
   necesariaToma = false;
   btnConfirmacion = false;
   irToma = false;
+  tempGas = false;
+  tempVib = false;
+
+  //Solicitar temperatura, humedad y calor
+  Serial.println(solicitarTempHum);                   //CODIGO DE EJECUCION EN ATMEGA
+  //Esperar 5 segundos a recoger informacion del temperatura y humedad 
+  delay(5000);  
 }
 
 /********************************************************************************/
@@ -200,6 +221,28 @@ void serial1Event() {
           sendPostToAPI(route, body);
         }
       }
+      //Evento de TEMPERATURA, HUMEDAD Y CALOR
+      else if (code.equals(tempHumeCalor)) {
+        Serial.println("Temperatura, humedad y calor recibidos");
+
+        tempTempe = value.toFloat();
+        tempHumed = split(comandoEvento, '-', 2).toFloat();
+        tempCalor = split(comandoEvento, '-', 3).toFloat();
+        
+        Serial.println("Temperatura: " + String(tempTempe) + " C");
+        Serial.println("Humedad: " + String(tempHumed) + "%");
+        Serial.println("Indice calor: " + String(tempCalor));
+      }
+      //Evento de DETECCION DE GAS
+      else if (code.equals(gasDeteccion)) {
+        Serial.println("Deteccion de Gas");
+        tempGas = true;
+      }
+      //Evento de DETECCION DE VIBRACION
+      else if (code.equals(vibDeteccion)) {
+        Serial.println("Deteccion de Vibracion");
+        tempVib = true;
+      }
       else {
         Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO");
       }
@@ -213,15 +256,25 @@ void serial1Event() {
 /* Rutina de llamadas a la API REST para comprobar si toca tomar medicacion */
 void rutinaApiHorarios() {
   if (controMinutoApi <= timeClient.getEpochTime()) {
+    Serial.println("SOLICITUD API HORARIOS");
+    
+    //Solicitar temperatura, humedad y calor
+    Serial.println(solicitarTempHum);                   //CODIGO DE EJECUCION EN ATMEGA
     //Sumar "llamadasCada" para realizar la siguiente llamada a la API horarios
     controMinutoApi = timeClient.getEpochTime() + llamadasCada;
     /*Serial.println(controMinutoApi);*/
 
     String response;
-    String route = routeBase + routeGetHorarios  + "/" + serial;
+    String queryparams = "?temp=" + String(tempTempe) + "&hume=" + String(tempHumed) 
+        + "&icalor=" + String(tempCalor) + "&gas=" + tempGas + "&vibracion=" + tempVib;
+    String route = routeBase + routeGetHorarios  + "/" + serial + queryparams;
     /*Serial.println("Requesting http://" + host + route);*/
     int statusCode = client.get(route.c_str(), &response);
     /* Serial.println(statusCode + " " + response); */
+
+    //Reinicializar temporales de gas y vibracion
+    tempGas = false;
+    tempVib = false;
 
     //Si el codigo de la respuesta es 200, toma de medicacion
     if (statusCode == 200) {

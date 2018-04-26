@@ -1,27 +1,35 @@
 
 /**********************************  INCLUDES  ***********************************/
 #include <AccelStepper.h>    //Libreria para controlar los motores paso a paso
+#include <DHT.h>             //Libreria para controlar sensor de temperatura y humedad
 /********************************************************************************/
 
 /**********************************  DEFINES  ***********************************/
-#define PIN_LED_NOT_TOMA   49
-#define PIN_ZUMB_NOT_TOMA  52
-#define PIN_LED_WIFI_OK    47
-#define PIN_BTN_CONF       51
-#define PIN_IR_TOMA        53
-#define HALFSTEP           8 //Half-step mode (8 step control signal sequence)
+#define PIN_LED_NOT_TOMA   46
+#define PIN_ZUMB_NOT_TOMA  1   //25
+#define PIN_LED_WIFI_OK    29
+#define PIN_BTN_CONF       50
+#define PIN_BTN_EMER       52
+#define PIN_IR_TOMA        48
+#define PIN_GAS            33
+#define PIN_VIB            30
+
+#define HALFSTEP           8      //Half-step mode (8 step control signal sequence)
+#define DHTTYPE            DHT11  //Sensor temp&humedad DHT11
+
+#define PIN_DHT            22
 
 //Define para los pines del MOTOR PASO A PASO 'A'
-#define motorAPin1         2     // IN1 on the ULN2003 driver A
-#define motorAPin2         3     // IN2 on the ULN2003 driver A
-#define motorAPin3         4     // IN3 on the ULN2003 driver A
-#define motorAPin4         5     // IN4 on the ULN2003 driver A
+#define motorAPin1         42     // IN1 on the ULN2003 driver A
+#define motorAPin2         43     // IN2 on the ULN2003 driver A
+#define motorAPin3         44     // IN3 on the ULN2003 driver A
+#define motorAPin4         45     // IN4 on the ULN2003 driver A
 
 //Define para los pines del MOTOR PASO A PASO 'B'
-#define motorBPin1         8     // IN1 on the ULN2003 driver B
-#define motorBPin2         9     // IN2 on the ULN2003 driver B
-#define motorBPin3         10     // IN3 on the ULN2003 driver B
-#define motorBPin4         11     // IN4 on the ULN2003 driver B
+#define motorBPin1         38     // IN1 on the ULN2003 driver B
+#define motorBPin2         39     // IN2 on the ULN2003 driver B
+#define motorBPin3         40     // IN3 on the ULN2003 driver B
+#define motorBPin4         41     // IN4 on the ULN2003 driver B
 /********************************************************************************/
 
 /*********************************  CONSTANTES  *********************************/
@@ -35,11 +43,16 @@ const String motorPastillasDispensadasB = "[MOTORDISPENSADO-B]";
 const String botonConfirmacionPulsado = "[PULSABTN-1]";
 const String botonEmergenciaPulsado = "[PULSABTN-2]";
 const String sensorIrDetectado = "[IRDETECCION-1]";
+const String tempHumeCalor = "[TEMPHUMCALOR";
+const String sensorGasDetectado = "[GASDETECCION-1]";
+const String sensorVibDetectado = "[VIBDETECCION-1]";
 
 //COMANDO RECIBIDOS DE ESP8266
 const String moverPastillero = "MPAS";
 const String wifiok = "WIFIOK";
 const String medicacionTomada = "MEDTOMADA";
+//Comando completo "[SOLICTEMHUM-*temp*-*hume*-*calor*]"
+const String solicitarTempHum = "SOLICTEMHUM";
 /********************************************************************************/
 
 /*********************************  VARIABLES  **********************************/
@@ -47,11 +60,16 @@ const String medicacionTomada = "MEDTOMADA";
 AccelStepper stepperA(HALFSTEP, motorAPin1, motorAPin3, motorAPin2, motorAPin4);
 AccelStepper stepperB(HALFSTEP, motorBPin1, motorBPin3, motorBPin2, motorBPin4);
 
+// Inicializamos el sensor DHT11 (temperatura y humedad)
+DHT dht(PIN_DHT, DHTTYPE);
+
 //Variables de control
 bool movPasA;
 bool movPasB;
 int oldStateBtnConf;
 int oldStateIrConf;
+int oldStateGas;
+int oldStateVib;
 
 String stringRecibido;
 /********************************************************************************/
@@ -69,8 +87,11 @@ void setup() {
   pinMode(PIN_ZUMB_NOT_TOMA, OUTPUT);
   pinMode(PIN_LED_WIFI_OK, OUTPUT);
   pinMode(PIN_BTN_CONF, INPUT);
+  pinMode(PIN_BTN_EMER, INPUT);
   pinMode(PIN_IR_TOMA, INPUT);
-
+  pinMode(PIN_GAS, INPUT);
+  pinMode(PIN_VIB, INPUT);
+  
   //Inicializar pines
   digitalWrite(PIN_LED_NOT_TOMA, LOW);
   digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
@@ -85,11 +106,16 @@ void setup() {
   stepperB.setAcceleration(100.0);
   stepperB.setSpeed(200);
 
+  //Inicializar el sensor DHT (temp&humedad)
+  dht.begin();
+
   //Inicializacion de variables de control
   movPasA = false;
   movPasB = false;
   oldStateBtnConf = LOW;
   oldStateIrConf = HIGH;
+  oldStateGas = HIGH;
+  oldStateVib = HIGH;
 }
 
 /********************************************************************************/
@@ -159,6 +185,22 @@ void serial3Event() {
         digitalWrite(PIN_LED_NOT_TOMA, LOW);
         digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
       }
+      //Evento de SOLICITARTEMPHUM (solicitud de temperatura, humedad y calor)
+      else if (code.equals(solicitarTempHum)) {
+        float h = dht.readHumidity();         //Humedad relativa
+        float t = dht.readTemperature();      //Temperatura en grados centígrados
+        
+        // Comprobamos si ha habido algún error en la lectura
+        if (isnan(h) || isnan(t)) {
+          Serial.println("Error obteniendo los datos del sensor DHT11");
+          return;
+        }
+        
+        // Calcular el índice de calor en grados centígrados
+        float hic = dht.computeHeatIndex(t, h, false);
+
+        Serial3.print(tempHumeCalor + "-" + String(t) + "-" + String(h) + "-" + String(hic) + "]");
+      }
       else {
         Serial.println("COMANDO ERRONEO!");
       }
@@ -218,6 +260,26 @@ void eventosHardware(){
   }
   else if (newStateIrConf == HIGH && oldStateIrConf == LOW) {
     oldStateIrConf = HIGH;
+  }
+
+  //SENSOR GAS
+  int newStateGas = digitalRead(PIN_GAS);
+  if (newStateGas == LOW && oldStateGas == HIGH) {           //Deteccion
+    Serial3.print(sensorGasDetectado);
+    oldStateGas = LOW;
+  }
+  else if (newStateGas == HIGH && oldStateGas == LOW) {
+    oldStateGas = HIGH;
+  }
+
+  //SENSOR VIBRACION
+  int newStateVib = digitalRead(PIN_VIB);
+  if (newStateVib == LOW && oldStateVib == HIGH) {          //Deteccion
+    Serial3.print(sensorVibDetectado);
+    oldStateVib = LOW;
+  }
+  else if (newStateVib == HIGH && oldStateVib == LOW) {
+    oldStateVib = HIGH;
   }
 }
 
