@@ -9,7 +9,7 @@
 
 /*********************************  CONSTANTES  *********************************/
 //Serial Caja de Medicamentos
-const String serial = "yyyyy-yyyyy-yyyyy-yyyyy-yyyyy";
+const String serial = "NZHH3-DHK2W-8SX7I-SESB3-7RLDP";
 const int numPastilleros = 2;
 
 //Datos de conexion al WiFi
@@ -26,13 +26,11 @@ const String routeBase = "/api";
 const String routeGetHorarios = "/schedule";
 const String routeUpdateHorario = "/update/action";
 const String routeUpdatePosicion = "/update/position";
-const String routeNotificacion = "/notify";
+const String routeNotificacionNoTomada = "/notification/notake";
+const String routeNotificacionEmergencia = "/notification/emergency";
 
 //Segundos para la siguiente llamada a la API de consulta de horarios
 const int llamadasCada = 60;
-
-//Segundos de margen para permitir la toma de la medicacion
-const int margenToma = 300;       //5 min
 
 //COMANDOS DE EJECUCION EN ATmega2560
 //Comando completo "[MPAS-A-3]" donde A es el pastillero y 3 la cantidad
@@ -40,10 +38,12 @@ const int margenToma = 300;       //5 min
 const String moverPastilleroA = "[MPAS-A";
 const String moverPastilleroB = "[MPAS-B";
 const String wifiOk = "[WIFIOK-1]";     //Comando de confirmacion de conexion WiFi
-//Comando de confirmacion de toma de medicacion (Sensor IR y btn de confirmacion ok)
-const String medicacionTomada = "[MEDTOMADA-1]";
 //Comando para solicitar la temperatura y la humedad del dispensador
 const String solicitarTempHum = "[SOLICTEMHUM-1]";
+//Comando completo "[LEDNOT-0]" donde 0 es que debe apagarse y 1 encenderse
+const String ledNotificacion = "[LEDNOT-";
+//Comando completo "[ZUMNOT-0]" donde 0 es que debe apagarse y 1 encenderse
+const String zumabdorNotificacion = "[ZUMNOT-";
 
 //COMANDO RECIBIDOS DE ATmega2560
 const String motorPastillasDispensadas = "MOTORDISPENSADO";
@@ -57,9 +57,11 @@ const String vibDeteccion = "VIBDETECCION";
 /*********************************  VARIABLES  **********************************/
 //Get fecha y hora actual de Espana
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+//+2 horas (horario verano) +1 hora (no horario verano)
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 7200, 60000);
 
 long controMinutoApi;
+long timeProgramacionRecibida;
 String comandoEvento;
 
 //Variables de API REST
@@ -68,12 +70,15 @@ RestClient client = RestClient(host, 8081); //Crear instancia para realizar API 
 //Horarios programados para ahora
 //Objetivo: Controlar los minutos siguientes a la programacion para comprobar
 //  que se toma la medicacion y actuar en consecuencia
-//  - Tomada: Sensor IR y boton de confirmacion
+//  - Tomada: Sensor IR y/o boton de confirmacion [configurables]
 //  - No tomada: Notificacion de no toma
 //i = 0 => id(id de mongo), unixtimetoma, pastillero=A, pastillas
 //i = 1 => id(id de mongo), unixtimetoma, pastillero=B, pastillas
 String horarios[numPastilleros][4];
 int numHorarios;
+//Configuraciones horarios (tiempoEspera) y se usa las variables btnConfirmacion e irToma 
+//para la configuracion del btn de confirmacion y del ir respectivamente
+int tiempoEspera = 300;       //Segundos de margen para permitir la toma de la medicacion
 
 boolean necesariaToma;
 boolean btnConfirmacion;
@@ -87,6 +92,9 @@ float tempCalor;
 //Temporales de gas y vibracion
 bool tempGas;
 bool tempVib;
+
+//Segundos que debe emitir sonido el zumbador de notificacion
+int segZumbador = 0;
 /********************************************************************************/
 
 void setup() {
@@ -128,8 +136,8 @@ void loop() {
   //Comprobaciones cada constante "llamadasCada"
   rutinaApiHorarios();
 
-  //Comprobacion de toma de la medicacion en el margen que marca la constante
-  //"margenToma" (si la variable necesariaToma, asi lo indica)
+  //Comprobacion de toma de la medicacion en el margen que marca la configuracion
+  //"tiempoEspera" (si la variable necesariaToma, asi lo indica)
   comprobacionToma();
 }
 
@@ -188,10 +196,10 @@ void serial1Event() {
         }
       }
       //Evento de PULSACION DE BOTON
-      //Siempre y cuando sea necesaria toma de medicacion
-      else if (code.equals(botonPulsado) && necesariaToma && !btnConfirmacion) {
+      else if (code.equals(botonPulsado)) {
         //Boton de CONFIRMACION de toma pulsado (1)
-        if (value.toInt() == 1) {
+        //Siempre y cuando sea necesaria toma de medicacion
+        if (value.toInt() == 1 && necesariaToma && !btnConfirmacion) {
           Serial.println("Confirmacion btn toma");
           btnConfirmacion = true;
 
@@ -204,7 +212,13 @@ void serial1Event() {
         }
         //Boton de EMERGENCIA de toma pulsado (2)
         else if (value.toInt() == 2) {
-
+            //Notificacion de emergencia
+            String route = routeBase + routeNotificacionEmergencia;
+            String body = "serial=" + serial;
+            sendPostToAPI(route, body);
+        }
+        else {
+          Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO");
         }
       }
       //Evento de DETECCION DE SENSOR IR
@@ -278,7 +292,11 @@ void rutinaApiHorarios() {
 
     //Si el codigo de la respuesta es 200, toma de medicacion
     if (statusCode == 200) {
-      StaticJsonBuffer<1000> jsonBuffer;
+      timeProgramacionRecibida = timeClient.getEpochTime();
+      //Control del 'tiempo de espera' de toma de medicacion (configuracion 'tiempoEspera')
+      necesariaToma = true;
+      
+      StaticJsonBuffer<2000> jsonBuffer;
       JsonObject& root = jsonBuffer.parseObject(response);
 
       //Comprobar si se ha parseado el JSON correctamente
@@ -287,9 +305,47 @@ void rutinaApiHorarios() {
         return;
       }
 
-      JsonArray& data = root["Horarios programados"]; //Datos de horarios
-      numHorarios = root["Numero horarios"];      //Numero de horarios
+      JsonArray& data = root["Horarios programados"];                //Datos de horarios
+      numHorarios = root["Numero horarios"];                         //Numero de horarios
+      JsonObject& configuracion = root["Configuracion horarios"][0]; //Configuracion
 
+      //Configuracion de horarios
+      //tiempoEspera
+      String tespera = configuracion["tespera"];
+      tiempoEspera = tespera.toInt();
+      
+      //irToma=false, si precisa de ser detectado 
+      //irToma=true, si no precisa de ser detectado ("se marca directemente como detectado")
+      if(configuracion["ir"] == "true"){
+        irToma = false;
+      }else{
+        irToma = true;
+      }
+      
+      //btnConfirmacion=false, si precisa de ser pulsado 
+      //btnConfirmacion=true, si no precisa de ser pulsado ("se marca directemente como pulsado")
+      if(configuracion["btn"] == "true"){
+        btnConfirmacion = false;
+      }else{
+        btnConfirmacion = true;
+      }
+
+      //Configuracion del Dispensador
+      //Led de notificacion
+      if(configuracion["led"] == "true"){
+          Serial.println(ledNotificacion + "1]");                //CODIGO DE EJECUCION EN ATMEGA
+      }
+      //Sonido de notificacion
+      if(configuracion["zumbador"] == "true"){
+        String tzumbador = configuracion["tzumbador"];
+        segZumbador = tzumbador.toInt();
+        Serial.println(zumabdorNotificacion + "1]");             //CODIGO DE EJECUCION EN ATMEGA
+      }
+      else{
+        segZumbador = 0;
+      }
+
+      //Horarios
       for (int i = 0; i < numHorarios; i = i + 1) {
         String id = data[i]["id"];
         /* Serial.println(id); */
@@ -297,11 +353,6 @@ void rutinaApiHorarios() {
         String unixTimeToma = String(unixTimeTomaInt);
         String pastillero = data[i]["pastillero"];
         String pastillas = data[i]["pastillas"];
-
-        //Control del margen de toma de medicacion (const margenToma)
-        necesariaToma = true;
-        btnConfirmacion = false;
-        irToma = false;
 
         horarios[i][0] = id;
         horarios[i][1] = unixTimeToma;
@@ -321,22 +372,39 @@ void rutinaApiHorarios() {
   }
 }
 
-/* Comprobacion de toma de la medicacion en el margen que marca la constante "margenToma" */
+/* Comprobacion de toma de la medicacion en el margen que marca la configuracion "tiempoEspera" */
 void comprobacionToma() {
   if (necesariaToma) {
-    //Si tanto el boton de confirmacion como el sensor IR han sido pulsado/detectado,
+      //Zumbador activo
+      if(segZumbador > 0){
+        //Si cumlple la condicion, apagar zumbador (fin de los segundos marcados en la configuracion)
+        if (timeClient.getEpochTime() > (timeProgramacionRecibida + segZumbador)) {
+          Serial.println(zumabdorNotificacion + "0]");                  //CODIGO DE EJECUCION EN ATMEGA
+          segZumbador = 0;
+        }
+      }
+    
+    //Si el boton de confirmacion y/o el sensor IR ha/n sido pulsado/detectado (y/o por configuracion),
     //no es necesaria notificacion ya que se presupone que se ha tomado la medicacion
     if (btnConfirmacion && irToma) {
       resetearNecesariaToma();
-      Serial.println(medicacionTomada);                   //CODIGO DE EJECUCION EN ATMEGA
-      Serial.println("MEDICACION TOMADA CORRECTAMENTE!");
+      Serial.println("Medicacion tomada correctamente");
     }
     else {
-      for (int i = 0; i < numHorarios; i = i + 1) {
-        //Sobrepasado tiempo de margen de toma de medicacion => notificacion
-        if (timeClient.getEpochTime() > (horarios[i][1].toInt() + margenToma)) {
-          resetearNecesariaToma();
-          Serial.println("ENVIAR NOTIFICACION A USUARIOS DE NO TOMA (API-REST)");
+      //Sobrepasado tiempo de margen de toma de medicacion -> NOTIFICACION MEDICACION NO TOMADA
+      if (timeClient.getEpochTime() > (timeProgramacionRecibida + tiempoEspera)) {
+        for (int i = 0; i < numHorarios; i = i + 1) {
+          Serial.println("Notificacion medicacion no tomada " + horarios[i][2]);
+          
+          //Enviar notificacion de medicacion no tomada (una notificacion por pastillero afectado)
+          String route = routeBase + routeNotificacionNoTomada;
+          String body = "id=" + horarios[i][0];
+          sendPostToAPI(route, body);
+
+          //Resetear variables cuando se procese el ultimo horario
+          if((i+1) == numHorarios){
+            resetearNecesariaToma();
+          }
         }
       }
     }
@@ -350,6 +418,11 @@ void resetearNecesariaToma() {
   necesariaToma = false;
   btnConfirmacion = false;
   irToma = false;
+
+  //Apagar led notificacion y zumbador
+  Serial.println(ledNotificacion + "0]");                     //CODIGO DE EJECUCION EN ATMEGA
+  Serial.println(zumabdorNotificacion + "0]");                //CODIGO DE EJECUCION EN ATMEGA
+  segZumbador = 0;
 }
 
 /* Conexion al WiFi */

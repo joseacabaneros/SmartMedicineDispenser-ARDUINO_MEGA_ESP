@@ -6,7 +6,7 @@
 
 /**********************************  DEFINES  ***********************************/
 #define PIN_LED_NOT_TOMA   46
-#define PIN_ZUMB_NOT_TOMA  1   //25
+#define PIN_ZUMB_NOT_TOMA  25
 #define PIN_LED_WIFI_OK    29
 #define PIN_BTN_CONF       50
 #define PIN_BTN_EMER       52
@@ -50,9 +50,10 @@ const String sensorVibDetectado = "[VIBDETECCION-1]";
 //COMANDO RECIBIDOS DE ESP8266
 const String moverPastillero = "MPAS";
 const String wifiok = "WIFIOK";
-const String medicacionTomada = "MEDTOMADA";
 //Comando completo "[SOLICTEMHUM-*temp*-*hume*-*calor*]"
 const String solicitarTempHum = "SOLICTEMHUM";
+const String ledNotificacion = "LEDNOT";
+const String zumabdorNotificacion = "ZUMNOT";
 /********************************************************************************/
 
 /*********************************  VARIABLES  **********************************/
@@ -70,6 +71,7 @@ int oldStateBtnConf;
 int oldStateIrConf;
 int oldStateGas;
 int oldStateVib;
+int oldStateBtnEmerg;
 
 String stringRecibido;
 /********************************************************************************/
@@ -116,6 +118,7 @@ void setup() {
   oldStateIrConf = HIGH;
   oldStateGas = HIGH;
   oldStateVib = HIGH;
+  oldStateBtnEmerg = LOW;
 }
 
 /********************************************************************************/
@@ -157,9 +160,6 @@ void serial3Event() {
 
       //Evento de MOVER PASTILLERO
       if (code.equals(moverPastillero)) {
-        digitalWrite(PIN_LED_NOT_TOMA, HIGH);
-        digitalWrite(PIN_ZUMB_NOT_TOMA, HIGH);
-        
         String numPastillas = split(stringRecibido, '-', 2);
         Serial.println("Pastillas: " + numPastillas);
         
@@ -180,11 +180,6 @@ void serial3Event() {
       else if (code.equals(wifiok)) {
         digitalWrite(PIN_LED_WIFI_OK, HIGH);
       }
-      //Evento de MEDTOMADA (Sensor IR y btn confirmacion ok)
-      else if (code.equals(medicacionTomada)) {
-        digitalWrite(PIN_LED_NOT_TOMA, LOW);
-        digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
-      }
       //Evento de SOLICITARTEMPHUM (solicitud de temperatura, humedad y calor)
       else if (code.equals(solicitarTempHum)) {
         float h = dht.readHumidity();         //Humedad relativa
@@ -200,6 +195,28 @@ void serial3Event() {
         float hic = dht.computeHeatIndex(t, h, false);
 
         Serial3.print(tempHumeCalor + "-" + String(t) + "-" + String(h) + "-" + String(hic) + "]");
+      }
+      //Evento de LEDNOTIFICACION (encender-1 o apagar-0)
+      else if (code.equals(ledNotificacion)) {
+        //Encender led de notificacion
+        if (value == "1") {
+          digitalWrite(PIN_LED_NOT_TOMA, HIGH);
+        }
+        //Apagar led de notificacion
+        else if (value == "0") {
+          digitalWrite(PIN_LED_NOT_TOMA, LOW);
+        }
+      }
+      //Evento de ZUMBADORNOTIFICACION (encender-1 o apagar-0)
+      else if (code.equals(zumabdorNotificacion)) {
+        //Encender zumbador
+        if (value == "1") {
+          digitalWrite(PIN_ZUMB_NOT_TOMA, HIGH);
+        }
+        //Apagar zumbador
+        else if (value == "0") {
+          digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
+        }
       }
       else {
         Serial.println("COMANDO ERRONEO!");
@@ -280,6 +297,16 @@ void eventosHardware(){
   }
   else if (newStateVib == HIGH && oldStateVib == LOW) {
     oldStateVib = HIGH;
+  }
+
+  //BOTON DE EMERGENCIA
+  int newStateBtnEmerg = digitalRead(PIN_BTN_EMER);
+  if (newStateBtnEmerg == HIGH && oldStateBtnEmerg == LOW) {
+    Serial3.print(botonEmergenciaPulsado);
+    oldStateBtnEmerg = HIGH;
+  }
+  else if (newStateBtnEmerg == LOW && oldStateBtnEmerg == HIGH) {
+    oldStateBtnEmerg = LOW;
   }
 }
 
