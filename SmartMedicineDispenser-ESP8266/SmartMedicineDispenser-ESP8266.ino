@@ -21,7 +21,8 @@ const char* password = "abcd1234";
 */
 
 //Datos de conexion a la API REST
-const char* host = "156.35.98.12";
+const char* host = "smart-medicine-dispenser.herokuapp.com";
+//const char* host = "156.35.98.12";
 const String routeBase = "/api";
 const String routeGetHorarios = "/schedule";
 const String routeUpdateHorario = "/update/action";
@@ -65,7 +66,8 @@ long timeProgramacionRecibida;
 String comandoEvento;
 
 //Variables de API REST
-RestClient client = RestClient(host, 8081); //Crear instancia para realizar API REST
+RestClient client = RestClient(host); //Crear instancia para realizar API REST
+//RestClient client = RestClient(host, 8081); //Crear instancia para realizar API REST
 
 //Horarios programados para ahora
 //Objetivo: Controlar los minutos siguientes a la programacion para comprobar
