@@ -146,7 +146,7 @@ void serial3Event() {
     //Encuentra el comando en los datos recibidos (el comando debe estar entre corchetes)
     if (inChar == ']') {
       //Salida de los datos de lectura al puerto Serial3
-      Serial.println(stringRecibido);
+      /* Serial.println(stringRecibido); */
 
       stringRecibido = stringRecibido.substring(1);         //Borrar '[' del codigo
       stringRecibido.remove(stringRecibido.length() - 1);   //Borrar ']' del valor
@@ -154,14 +154,16 @@ void serial3Event() {
       String code = split(stringRecibido, '-', 0);
       String value = split(stringRecibido, '-', 1);
 
+      /*
       Serial.println("EVENT ESP2ATmega");
       Serial.println("Code: " + code);
       Serial.println("Value: " + value);
+      */
 
       //Evento de MOVER PASTILLERO
       if (code.equals(moverPastillero)) {
         String numPastillas = split(stringRecibido, '-', 2);
-        Serial.println("Pastillas: " + numPastillas);
+        /* Serial.println("Pastillas: " + numPastillas); */
         
         //Mover PASTILLERO A
         //Comando completo "[MPAS-A-3]"
@@ -187,7 +189,7 @@ void serial3Event() {
         
         // Comprobamos si ha habido algún error en la lectura
         if (isnan(h) || isnan(t)) {
-          Serial.println("Error obteniendo los datos del sensor DHT11");
+          /* Serial.println("Error obteniendo los datos del sensor DHT11"); */
           return;
         }
         
@@ -219,7 +221,7 @@ void serial3Event() {
         }
       }
       else {
-        Serial.println("COMANDO ERRONEO!");
+        /* Serial.println("COMANDO ERRONEO!"); */
       }
 
       stringRecibido = "";
@@ -227,7 +229,7 @@ void serial3Event() {
     //String resibido de ESP8266 para ser mostrado en el monitor
     else if(inChar == '\n'){
       //Salida de los datos de lectura al puerto Serial
-      Serial.print(stringRecibido);
+      /* Serial.print(stringRecibido); */
       stringRecibido = "";
     }
   }
@@ -264,6 +266,8 @@ void eventosHardware(){
   if (newStateBtnConf == HIGH && oldStateBtnConf == LOW) {
     Serial3.print(botonConfirmacionPulsado);
     oldStateBtnConf = HIGH;
+    //Emitir BIP de confirmacion
+    bip();
   }
   else if (newStateBtnConf == LOW && oldStateBtnConf == HIGH) {
     oldStateBtnConf = LOW;
@@ -274,6 +278,8 @@ void eventosHardware(){
   if (newStateIrConf == LOW && oldStateIrConf == HIGH) {  //Deteccion
     Serial3.print(sensorIrDetectado);
     oldStateIrConf = LOW;
+    //Emitir BIP de confirmacion
+    bip();
   }
   else if (newStateIrConf == HIGH && oldStateIrConf == LOW) {
     oldStateIrConf = HIGH;
@@ -284,6 +290,8 @@ void eventosHardware(){
   if (newStateGas == LOW && oldStateGas == HIGH) {           //Deteccion
     Serial3.print(sensorGasDetectado);
     oldStateGas = LOW;
+    //Emitir BIP de confirmacion
+    bip();
   }
   else if (newStateGas == HIGH && oldStateGas == LOW) {
     oldStateGas = HIGH;
@@ -294,6 +302,8 @@ void eventosHardware(){
   if (newStateVib == LOW && oldStateVib == HIGH) {          //Deteccion
     Serial3.print(sensorVibDetectado);
     oldStateVib = LOW;
+    //Emitir BIP de confirmacion
+    bip();
   }
   else if (newStateVib == HIGH && oldStateVib == LOW) {
     oldStateVib = HIGH;
@@ -304,12 +314,20 @@ void eventosHardware(){
   if (newStateBtnEmerg == HIGH && oldStateBtnEmerg == LOW) {
     Serial3.print(botonEmergenciaPulsado);
     oldStateBtnEmerg = HIGH;
+    //Emitir BIP de confirmacion
+    bip();
   }
   else if (newStateBtnEmerg == LOW && oldStateBtnEmerg == HIGH) {
     oldStateBtnEmerg = LOW;
   }
 }
 
+/* Metodo para emitir BIP de confirmacion hardware */
+void bip(){
+  digitalWrite(PIN_ZUMB_NOT_TOMA, HIGH);
+  delay(50);
+  digitalWrite(PIN_ZUMB_NOT_TOMA, LOW);
+}
 
 /* Metodo de utilidad para hacer split de un String */
 String split(String data, char separator, int index)

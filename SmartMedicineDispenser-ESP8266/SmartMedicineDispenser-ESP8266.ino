@@ -13,12 +13,12 @@ const String serial = "NZHH3-DHK2W-8SX7I-SESB3-7RLDP";
 const int numPastilleros = 2;
 
 //Datos de conexion al WiFi
+/*
 const char* ssid = "JAZZTEL_U9rS";
 const char* password = "ku7j7br5phzx";
-/*
+*/
 const char* ssid = "AndroidAP";
 const char* password = "abcd1234";
-*/
 
 //Datos de conexion a la API REST
 const char* host = "smart-medicine-dispenser.herokuapp.com";
@@ -163,15 +163,17 @@ void serial1Event() {
       String code = split(comandoEvento, '-', 0);
       String value = split(comandoEvento, '-', 1);
 
+      /*
       Serial.println("EVENT ATmega2ESP");
       Serial.println("Code: " + code);
       Serial.println("Value: " + value);
+      */
 
       //Evento de MOTOR PASTILLAS YA DISPENSADAS
       if (code.equals(motorPastillasDispensadas)) {
         //MOTOR PASTILLERO A
         if (value == "A") {
-          Serial.println("Confirmacion motor A pastillas dispensadas");
+          /* Serial.println("Confirmacion motor A pastillas dispensadas"); */
 
           //Actualizar posicion del pastillero A
           String route = routeBase + routeUpdatePosicion;
@@ -181,7 +183,7 @@ void serial1Event() {
         }
         //MOTOR PASTILLERO B
         else if (value == "B") {
-          Serial.println("Confirmacion motor B pastillas dispensadas");
+          /* Serial.println("Confirmacion motor B pastillas dispensadas"); */
 
           //Actualizar posicion del pastillero B
           String route = routeBase + routeUpdatePosicion;
@@ -202,7 +204,7 @@ void serial1Event() {
         //Boton de CONFIRMACION de toma pulsado (1)
         //Siempre y cuando sea necesaria toma de medicacion
         if (value.toInt() == 1 && necesariaToma && !btnConfirmacion) {
-          Serial.println("Confirmacion btn toma");
+          /* Serial.println("Confirmacion btn toma"); */
           btnConfirmacion = true;
 
           //Actualizar boton de confirmacion de los horarios
@@ -220,14 +222,14 @@ void serial1Event() {
             sendPostToAPI(route, body);
         }
         else {
-          Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO");
+          /* Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO"); */
         }
       }
       //Evento de DETECCION DE SENSOR IR
       //Siempre y cuando sea necesaria toma de medicacion
       else if (code.equals(irDeteccion) && necesariaToma && !irToma) {
         //IR de DETECCION de toma
-        Serial.println("Deteccion IR toma");
+        /* Serial.println("Deteccion IR toma"); */
         irToma = true;
 
         //Actualizar IR de confirmacion de los horarios
@@ -239,28 +241,30 @@ void serial1Event() {
       }
       //Evento de TEMPERATURA, HUMEDAD Y CALOR
       else if (code.equals(tempHumeCalor)) {
-        Serial.println("Temperatura, humedad y calor recibidos");
+        /* Serial.println("Temperatura, humedad y calor recibidos"); */
 
         tempTempe = value.toFloat();
         tempHumed = split(comandoEvento, '-', 2).toFloat();
         tempCalor = split(comandoEvento, '-', 3).toFloat();
-        
+
+        /*
         Serial.println("Temperatura: " + String(tempTempe) + " C");
         Serial.println("Humedad: " + String(tempHumed) + "%");
         Serial.println("Indice calor: " + String(tempCalor));
+        */
       }
       //Evento de DETECCION DE GAS
       else if (code.equals(gasDeteccion)) {
-        Serial.println("Deteccion de Gas");
+        /* Serial.println("Deteccion de Gas"); */
         tempGas = true;
       }
       //Evento de DETECCION DE VIBRACION
       else if (code.equals(vibDeteccion)) {
-        Serial.println("Deteccion de Vibracion");
+        /* Serial.println("Deteccion de Vibracion"); */
         tempVib = true;
       }
       else {
-        Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO");
+        /* Serial.println("COMANDO ERRONEO O INNECESARIO EN ESTE MOMENTO"); */
       }
 
       comandoEvento = "";
@@ -272,7 +276,7 @@ void serial1Event() {
 /* Rutina de llamadas a la API REST para comprobar si toca tomar medicacion */
 void rutinaApiHorarios() {
   if (controMinutoApi <= timeClient.getEpochTime()) {
-    Serial.println("SOLICITUD API HORARIOS");
+    /* Serial.println("SOLICITUD API HORARIOS"); */
     
     //Solicitar temperatura, humedad y calor
     Serial.println(solicitarTempHum);                   //CODIGO DE EJECUCION EN ATMEGA
@@ -390,13 +394,13 @@ void comprobacionToma() {
     //no es necesaria notificacion ya que se presupone que se ha tomado la medicacion
     if (btnConfirmacion && irToma) {
       resetearNecesariaToma();
-      Serial.println("Medicacion tomada correctamente");
+      /* Serial.println("Medicacion tomada correctamente"); */
     }
     else {
       //Sobrepasado tiempo de margen de toma de medicacion -> NOTIFICACION MEDICACION NO TOMADA
       if (timeClient.getEpochTime() > (timeProgramacionRecibida + tiempoEspera)) {
         for (int i = 0; i < numHorarios; i = i + 1) {
-          Serial.println("Notificacion medicacion no tomada " + horarios[i][2]);
+          /* Serial.println("Notificacion medicacion no tomada " + horarios[i][2]); */
           
           //Enviar notificacion de medicacion no tomada (una notificacion por pastillero afectado)
           String route = routeBase + routeNotificacionNoTomada;
@@ -438,7 +442,7 @@ void conexionWiFi() {
   }
 
   //Notificar a ATMega que se ha conectado correctamente al WiFi
-  Serial.println(wifiOk);    //CODIGO DE EJECUCION EN ATMEGA
+  Serial.println(wifiOk);                                     //CODIGO DE EJECUCION EN ATMEGA
 
   /*Serial.println("");
     Serial.println("Conectado a " + ssid);*/
